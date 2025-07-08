@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        .message-container {
+            flex: 1;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+        .input-container {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        #messageInput {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 8px 16px;
+            margin-left: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button.red {
+            background-color: #f44336;
+        }
+        button.red:hover {
+            background-color: #d32f2f;
+        }
+        button.blue {
+            background-color: #2196F3;
+        }
+        button.blue:hover {
+            background-color: #0b7dda;
+        }
+        .message {
+            margin-bottom: 8px;
+            padding: 8px;
+            border-radius: 5px;
+        }
+        .sent {
+            background-color: #e6f7ff;
+            text-align: right;
+        }
+        .received {
+            background-color: #f1f1f1;
+        }
+        .status {
+            color: #666;
+            font-style: italic;
+            text-align: center;
+        }
+        .error {
+            color: #f44336;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .recording-indicator {
+            color: red;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .hidden {
+            display: none;
+        }
+        #audioControls {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WebSocket测试客户端</h1>
+        
+        <div class="controls">
+            <button id="connectBtn">连接</button>
+            <button id="disconnectBtn" disabled>断开连接</button>
+            <button id="resetConversationBtn" class="blue" disabled>重置对话</button>
+            <button id="getAudioParamsBtn" class="blue" disabled>获取音频参数</button>
+        </div>
+        
+        <div id="audioControls" class="hidden">
+            <h3>音频测试</h3>
+            <button id="startRecordingBtn" class="blue" disabled>开始录音</button>
+            <button id="stopRecordingBtn" class="red" disabled>停止录音</button>
+            <span id="recordingIndicator" class="recording-indicator hidden">录音中...</span>
+            
+            <div id="audioOutput">
+                <h3>音频回复</h3>
+                <audio id="audioPlayer" controls></audio>
+            </div>
+        </div>
+        
+        <div class="message-container" id="messageContainer"></div>
+        
+        <div class="input-container">
+            <input type="text" id="messageInput" placeholder="输入消息..." disabled>
+            <button id="sendBtn" disabled>发送</button>
+            <button id="sendBroadcastBtn" class="blue" disabled>广播</button>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let stream = null;
+        
+        // DOM元素
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const resetConversationBtn = document.getElementById('resetConversationBtn');
+        const getAudioParamsBtn = document.getElementById('getAudioParamsBtn');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const sendBroadcastBtn = document.getElementById('sendBroadcastBtn');
+        const messageContainer = document.getElementById('messageContainer');
+        const startRecordingBtn = document.getElementById('startRecordingBtn');
+        const stopRecordingBtn = document.getElementById('stopRecordingBtn');
+        const recordingIndicator = document.getElementById('recordingIndicator');
+        const audioControls = document.getElementById('audioControls');
+        const audioPlayer = document.getElementById('audioPlayer');
+        
+        // 连接WebSocket
+        connectBtn.addEventListener('click', () => {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    addMessage('已连接到服务器', 'status');
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    messageInput.disabled = false;
+                    sendBtn.disabled = false;
+                    sendBroadcastBtn.disabled = false;
+                    resetConversationBtn.disabled = false;
+                    getAudioParamsBtn.disabled = false;
+                    audioControls.classList.remove('hidden');
+                    startRecordingBtn.disabled = false;
+                    
+                    // 发送心跳
+                    startHeartbeat();
+                };
+                
+                ws.onclose = () => {
+                    addMessage('已断开连接', 'status');
+                    cleanupConnection();
+                };
+                
+                ws.onerror = (error) => {
+                    addMessage(`连接错误: ${error.message}`, 'error');
+                    cleanupConnection();
+                };
+                
+                ws.onmessage = handleMessage;
+                
+            } catch (error) {
+                addMessage(`无法连接到服务器: ${error.message}`, 'error');
+            }
+        });
+        
+        // 断开WebSocket连接
+        disconnectBtn.addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            }
+        });
+        
+        // 发送消息
+        sendBtn.addEventListener('click', () => {
+            sendMessage(false);
+        });
+        
+        // 发送广播消息
+        sendBroadcastBtn.addEventListener('click', () => {
+            sendMessage(true);
+        });
+        
+        // 重置对话
+        resetConversationBtn.addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = {
+                    command: 'reset_conversation'
+                };
+                ws.send(JSON.stringify(message));
+                addMessage('重置对话请求已发送', 'status');
+            }
+        });
+        
+        // 获取音频参数
+        getAudioParamsBtn.addEventListener('click', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const message = {
+                    command: 'get_audio_params'
+                };
+                ws.send(JSON.stringify(message));
+                addMessage('获取音频参数请求已发送', 'status');
+            }
+        });
+        
+        // 开始录音
+        startRecordingBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioChunks = [];
+                
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+                
+                mediaRecorder.onstop = () => {
+                    // 通知服务器录音已停止
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ command: 'recording_stopped' }));
+                        addMessage('录音已停止并发送完成信号', 'status');
+                    }
+                    
+                    // 清理录音资源
+                    stopRecording();
+                };
+                
+                // 开始录音
+                mediaRecorder.start(100); // 每100ms获取一次数据
+                
+                // 发送录音数据的定时器
+                audioSendInterval = setInterval(() => {
+                    if (audioChunks.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
+                        const blob = new Blob(audioChunks, { type: 'audio/wav' });
+                        audioChunks = []; // 清空发送过的数据
+                        
+                        // 将Blob转换为ArrayBuffer并发送
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            ws.send(reader.result);
+                        };
+                        reader.readAsArrayBuffer(blob);
+                    }
+                }, 300);
+                
+                // 更新UI
+                startRecordingBtn.disabled = true;
+                stopRecordingBtn.disabled = false;
+                recordingIndicator.classList.remove('hidden');
+                addMessage('开始录音', 'status');
+                
+            } catch (error) {
+                addMessage(`录音错误: ${error.message}`, 'error');
+            }
+        });
+        
+        // 停止录音
+        stopRecordingBtn.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                addMessage('正在停止录音...', 'status');
+            }
+        });
+        
+        // 发送普通消息
+        function sendMessage(broadcast) {
+            const message = messageInput.value.trim();
+            if (message && ws && ws.readyState === WebSocket.OPEN) {
+                const data = {
+                    content: message,
+                    broadcast: broadcast
+                };
+                ws.send(JSON.stringify(data));
+                addMessage(`${message}`, 'sent');
+                messageInput.value = '';
+            }
+        }
+        
+        // 处理接收到的消息
+        function handleMessage(event) {
+            // 检查是否是二进制数据(音频数据)
+            if (event.data instanceof Blob) {
+                // 处理接收到的音频数据
+                const audioBlob = event.data;
+                const audioUrl = URL.createObjectURL(audioBlob);
+                audioPlayer.src = audioUrl;
+                audioPlayer.play();
+                addMessage('收到音频响应', 'status');
+                return;
+            }
+            
+            try {
+                const data = JSON.parse(event.data);
+                
+                // 根据消息类型处理
+                switch (data.type) {
+                    case 'response':
+                        addMessage(`${data.content}`, 'received');
+                        break;
+                    case 'audio_params':
+                        const params = data.content;
+                        addMessage(`音频参数: 采样率=${params.sample_rate}Hz, 通道数=${params.channels}, 样本宽度=${params.sample_width}字节`, 'status');
+                        break;
+                    case 'error':
+                        addMessage(`错误: ${data.content}`, 'error');
+                        break;
+                    case 'status':
+                        addMessage(`状态: ${data.content}`, 'status');
+                        break;
+                    case 'text':
+                        addMessage(`${data.content}`, 'received');
+                        break;
+                    case 'heartbeat':
+                        // 心跳响应，不显示在界面上
+                        break;
+                    default:
+                        addMessage(`收到未知类型消息: ${JSON.stringify(data)}`, 'received');
+                }
+            } catch (error) {
+                // 非JSON格式的文本消息
+                addMessage(`收到消息: ${event.data}`, 'received');
+            }
+        }
+        
+        // 添加消息到聊天区域
+        function addMessage(message, type) {
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${type}`;
+            messageElement.textContent = message;
+            messageContainer.appendChild(messageElement);
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+        
+        // 清理连接相关状态
+        function cleanupConnection() {
+            stopRecording();
+            
+            connectBtn.disabled = false;
+            disconnectBtn.disabled = true;
+            messageInput.disabled = true;
+            sendBtn.disabled = true;
+            sendBroadcastBtn.disabled = true;
+            resetConversationBtn.disabled = true;
+            getAudioParamsBtn.disabled = true;
+            startRecordingBtn.disabled = true;
+            stopRecordingBtn.disabled = true;
+            audioControls.classList.add('hidden');
+            
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+            }
+            
+            ws = null;
+        }
+        
+        // 停止录音并清理资源
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+            
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            if (audioSendInterval) {
+                clearInterval(audioSendInterval);
+                audioSendInterval = null;
+            }
+            
+            mediaRecorder = null;
+            audioChunks = [];
+            
+            startRecordingBtn.disabled = !ws;
+            stopRecordingBtn.disabled = true;
+            recordingIndicator.classList.add('hidden');
+        }
+        
+        // 发送心跳
+        let heartbeatInterval = null;
+        function startHeartbeat() {
+            heartbeatInterval = setInterval(() => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ heartbeat: Date.now() }));
+                }
+            }, 30000); // 每30秒发送一次心跳
+        }
+        
+        // 支持按回车键发送消息
+        messageInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                sendMessage(false);
+            }
+        });
+    </script>
+</body>
+</html> 

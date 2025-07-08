@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+
+.DS_Store/
+checkpoints/
+
+.env_private
+.env
+database_export.json
+category.json
+app.log

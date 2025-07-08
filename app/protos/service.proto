@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package service;
+
+// 服务定义
+service MessageService {
+  // 发送消息
+  rpc SendMessage (MessageRequest) returns (MessageResponse) {}
+  
+  // 获取消息
+  rpc GetMessage (GetMessageRequest) returns (MessageResponse) {}
+  
+  // 服务器流式响应示例
+  rpc StreamMessages (StreamRequest) returns (stream MessageResponse) {}
+}
+
+// 消息请求
+message MessageRequest {
+  string content = 1;
+  bool broadcast = 2;
+}
+
+// 获取消息请求
+message GetMessageRequest {
+  string message_id = 1;
+}
+
+// 流请求
+message StreamRequest {
+  int32 count = 1;
+}
+
+// 消息响应
+message MessageResponse {
+  string id = 1;
+  string content = 2;
+  string created_at = 3;
+  string status = 4;
+} 
