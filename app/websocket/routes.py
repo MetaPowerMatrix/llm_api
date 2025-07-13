@@ -213,6 +213,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                     command = data["command"]
                                     
                                     if command == "audio_complete":
+                                        pass
                                         # 前端发送完所有音频数据
                                         if len(session_audio_buffers[session_id]) > 0:
                                             if ai_backend is None:
