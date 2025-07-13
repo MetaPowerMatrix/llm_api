@@ -196,7 +196,14 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                         if "bytes" in message:
                             # 接收音频数据块
                             audio_data = message["bytes"]
-                            session_audio_buffers[session_id].extend(audio_data)
+                            complete_audio_data = bytes(audio_data)
+                            session_id_bytes = uuid.UUID(session_id).bytes
+                            data_with_session = session_id_bytes + complete_audio_data
+
+                            # 发送音频数据
+                            await ai_backend.send_bytes(data_with_session)
+
+                            # session_audio_buffers[session_id].extend(audio_data)
                             
                         elif "text" in message:
                             try:
@@ -208,11 +215,6 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                     if command == "audio_complete":
                                         # 前端发送完所有音频数据
                                         if len(session_audio_buffers[session_id]) > 0:
-                                            logger.info(f"前端音频传输完成，准备转发到AI后端处理，总大小: {len(session_audio_buffers[session_id])} 字节")
-                                            wav_file_path = await save_raw_to_wav(session_audio_buffers[session_id])
-                                            logger.info(f"音频数据已保存为WAV文件: {wav_file_path}")
-
-                                            # 检查AI后端是否连接
                                             if ai_backend is None:
                                                 await websocket.send_text(json.dumps({
                                                     "type": "error",
