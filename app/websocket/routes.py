@@ -80,7 +80,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                 while True:
                     try:
                         # 在接收消息前记录日志
-                        logger.debug(f"准备接收来自客户端的消息")
+                        logger.info(f"准备接收来自AI后端的消息")
                         message = await websocket.receive()
                         
                         # 检查消息类型
@@ -189,7 +189,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                 # 监听来自前端的消息
                 while True:
                     try:
-                        logger.debug(f"准备接收来自客户端{client_id}的消息")
+                        logger.info(f"准备接收来自前端客户端{client_id}的消息")
                         message = await websocket.receive()
                         
                         # 检查消息类型
@@ -212,7 +212,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                     
                                     # 清空缓冲区
                                     session_audio_buffers[session_id] = bytearray()
-                                    logger.debug(f"发送音频数据: {len(complete_audio_data)} 字节, 会话ID: {session_id}")
+                                    logger.info(f"发送音频数据: {len(complete_audio_data)} 字节, 会话ID: {session_id}")
                                 else:
                                     logger.warning("AI后端未连接，无法发送音频数据")
                             
