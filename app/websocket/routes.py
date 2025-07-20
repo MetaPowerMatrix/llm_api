@@ -132,7 +132,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                 try:
                                     # 将字节转换为UUID字符串
                                     session_id = str(uuid.UUID(bytes=session_id_bytes))
-                                    # logger.info(f"接收到AI后端音频数据: {len(audio_data)} 字节, 会话ID: {session_id}")
+                                    logger.info(f"接收到AI后端音频数据: {len(audio_data)} 字节, 会话ID: {session_id}")
                                         
                                     # 查找对应的前端客户端
                                     if session_id in session_to_client:
