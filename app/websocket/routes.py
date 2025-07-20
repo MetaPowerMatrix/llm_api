@@ -92,7 +92,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                 if "type" in data and data.get("type") == "heartbeat":
                                     # 回复心跳确认
                                     await ai_backend.send_text(json.dumps({"type": "heartbeat_ack"}))
-                                    logger.info("收到心跳，回复心跳确认")
+                                    # logger.info("收到心跳，回复心跳确认")
                                 elif "session_id" in data and "type" in data and data.get("type") == "text":
                                     session_id = str(uuid.UUID(data["session_id"]))
                                     
