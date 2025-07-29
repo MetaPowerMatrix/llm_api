@@ -586,6 +586,8 @@ async def call_websocket_endpoint(websocket: WebSocket):
                 audio_data = f.read()
                 audio_data = base64.b64encode(audio_data).decode('utf-8')
                 
+            logger.info(f"欢迎音频数据长度: {len(audio_data)}")
+
             welcome_message = {
                 "type": "streamAudio",
                 "data": {
@@ -597,6 +599,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
                 }
             }
             await websocket.send_text(json.dumps(welcome_message))
+            logger.info(f"发送欢迎音频: {len(audio_data)} 字节")
             await asyncio.sleep(1)
             
             try:
