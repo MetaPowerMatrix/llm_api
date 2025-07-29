@@ -590,7 +590,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
                 "type": "streamAudio",
                 "data": {
                     "audioDataType": "wav",
-                    "sampleRate": 16000,
+                    "sampleRate": 32000,
                     "channels": 1,
                     "bitDepth": 16,
                     "audioData": audio_data
