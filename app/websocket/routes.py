@@ -540,8 +540,6 @@ async def call_websocket_endpoint(websocket: WebSocket):
                 
         elif client_type == "freeswitch":
             # 处理FreeSwitch客户端连接
-            global call_freeswitch_clients, call_to_client, client_to_call, call_audio_buffers, call_audio_configs
-            
             client_id = f"fs_client_{id(websocket)}"
             
             # 获取呼叫ID，如果没有提供则生成一个
