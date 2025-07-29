@@ -497,7 +497,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
                                             # 获取该呼叫的音频配置
                                             audio_config = call_audio_configs.get(call_id, {
                                                 "audioDataType": "raw",
-                                                "sampleRate": 8000,
+                                                "sampleRate": 24000,
                                                 "channels": 1,
                                                 "bitDepth": 16
                                             })
@@ -506,17 +506,19 @@ async def call_websocket_endpoint(websocket: WebSocket):
                                             audio_message = {
                                                 "type": "streamAudio",
                                                 "data": {
-                                                    "audioDataType": audio_config["audioDataType"],
-                                                    "sampleRate": audio_config["sampleRate"],
+                                                    "audioDataType": "raw",
+                                                    "sampleRate": 24000,
+                                                    "channels": 1,
+                                                    "bitDepth": 16,
                                                     "audioData": base64.b64encode(audio_data).decode('utf-8')
                                                 }
                                             }
                                             
                                             # 如果配置中包含额外信息，也添加到消息中
-                                            if "channels" in audio_config:
-                                                audio_message["data"]["channels"] = audio_config["channels"]
-                                            if "bitDepth" in audio_config:
-                                                audio_message["data"]["bitDepth"] = audio_config["bitDepth"]
+                                            # if "channels" in audio_config:
+                                            #     audio_message["data"]["channels"] = audio_config["channels"]
+                                            # if "bitDepth" in audio_config:
+                                            #     audio_message["data"]["bitDepth"] = audio_config["bitDepth"]
                                             
                                             await freeswitch_ws.send_text(json.dumps(audio_message))
                                             logger.info(f"已将AI处理的音频数据转发至FreeSwitch客户端 {client_id} (格式: {audio_config['audioDataType']}, {audio_config['sampleRate']}Hz)")
