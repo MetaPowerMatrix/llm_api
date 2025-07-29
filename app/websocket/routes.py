@@ -579,16 +579,23 @@ async def call_websocket_endpoint(websocket: WebSocket):
             
             logger.info(f"FreeSwitch客户端已连接: ID={client_id}, 呼叫ID={call_id}, 音频格式={final_audio_config['audioDataType']}")
             
-            # 向FreeSwitch发送连接确认
-            await websocket.send_text(json.dumps({
-                "type": "connected",
-                "content": {
-                    "call_id": call_id,
-                    "client_id": client_id,
-                    "status": "ready",
-                    "audio_config": final_audio_config
+            # 发送欢迎音频，读取目录下的welcome.wav，转换成8000，mono，16bit
+            with open("welcome.wav", "rb") as f:
+                audio_data = f.read()
+                audio_data = base64.b64encode(audio_data).decode('utf-8')
+                
+            welcome_message = {
+                "type": "streamAudio",
+                "data": {
+                    "audioDataType": "wav",
+                    "sampleRate": 16000,
+                    "channels": 1,
+                    "bitDepth": 16,
+                    "audioData": audio_data
                 }
-            }))
+            }
+            await websocket.send_text(json.dumps(welcome_message))
+            await asyncio.sleep(1)
             
             try:
                 # 监听来自FreeSwitch的消息
