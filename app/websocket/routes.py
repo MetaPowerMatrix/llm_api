@@ -496,7 +496,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
                                             
                                             # 获取该呼叫的音频配置
                                             audio_config = call_audio_configs.get(call_id, {
-                                                "audioDataType": "raw",
+                                                "audioDataType": "wav",
                                                 "sampleRate": 24000,
                                                 "channels": 1,
                                                 "bitDepth": 16
@@ -506,7 +506,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
                                             audio_message = {
                                                 "type": "streamAudio",
                                                 "data": {
-                                                    "audioDataType": "raw",
+                                                    "audioDataType": "wav",
                                                     "sampleRate": 24000,
                                                     "channels": 1,
                                                     "bitDepth": 16,
