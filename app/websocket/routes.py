@@ -393,6 +393,9 @@ async def call_websocket_endpoint(websocket: WebSocket):
     try:
         # 等待连接标识消息
         init_message = await websocket.receive_text()
+        if not "text" in init_message:
+            return
+        
         logger.info(f"呼叫初始化消息: {init_message}")
         init_data = json.loads(init_message)
         
@@ -551,7 +554,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
             audio_config = init_data.get("audio_config", {})
             default_config = {
                 "audioDataType": "raw",
-                "sampleRate": 8000,
+                "sampleRate": 16000,
                 "channels": 1,
                 "bitDepth": 16
             }
@@ -581,7 +584,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
             
             logger.info(f"FreeSwitch客户端已连接: ID={client_id}, 呼叫ID={call_id}, 音频格式={final_audio_config['audioDataType']}")
             
-            # 发送欢迎音频，读取目录下的welcome.wav，转换成8000，mono，16bit
+            # 发送欢迎音频，读取目录下的welcome.wav
             with open("welcome.wav", "rb") as f:
                 audio_data = f.read()
                 audio_data = base64.b64encode(audio_data).decode('utf-8')
