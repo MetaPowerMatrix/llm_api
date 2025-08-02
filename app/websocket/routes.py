@@ -392,7 +392,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
     
     try:
         # 等待连接标识消息
-        init_message = await websocket.receive_text()
+        init_message = await websocket.receive()
         if not "text" in init_message:
             return
         
