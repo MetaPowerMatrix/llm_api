@@ -613,6 +613,10 @@ async def call_websocket_endpoint(websocket: WebSocket):
                         if "bytes" in message:
                             # 接收音频数据块
                             audio_data = message["bytes"]
+                            # 保存为wav文件到当前目录的input目录下
+                            with open(f"input/{call_id}.wav", "wb") as f:
+                                f.write(audio_data)
+                            logger.info(f"保存音频数据到文件: {call_id}.wav")
                             
                             # 将音频数据添加到缓冲区
                             call_audio_buffers[call_id].extend(audio_data)
