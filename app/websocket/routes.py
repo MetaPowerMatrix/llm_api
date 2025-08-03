@@ -625,7 +625,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
                             call_audio_buffers[call_id].extend(audio_data)
                             
                             # 检查缓冲区大小是否超过32k
-                            if len(call_audio_buffers[call_id]) >= 65536:  # 32k = 32 * 1024
+                            if len(call_audio_buffers[call_id]) >= 32768:  # 32k = 32 * 1024
                                 if call_ai_backend is not None:
                                     # 发送累积的音频数据到呼叫AI后端
                                     complete_audio_data = bytes(call_audio_buffers[call_id])
