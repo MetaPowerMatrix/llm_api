@@ -397,7 +397,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
             return
         
         logger.info(f"呼叫初始化消息: {init_message}")
-        init_data = json.loads(init_message)
+        init_data = json.loads(init_message["text"])
         
         if "client_type" not in init_data:
             await websocket.send_text(json.dumps({
