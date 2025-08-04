@@ -53,6 +53,7 @@ import json
 import logging
 import base64
 from typing import Dict, Optional
+from api.app.websocket.audio_receiver import AudioReceiver
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import uuid
 import asyncio
@@ -614,23 +615,19 @@ async def call_websocket_endpoint(websocket: WebSocket):
                         
                         # 检查消息类型
                         if "bytes" in message:
-                            # 接收音频数据块
                             audio_data = message["bytes"]
-                            # 保存为wav文件到当前目录的input目录下
-                            tmp_audio_file = uuid.uuid4().hex + ".wav"
-                            with open(f"input/{tmp_audio_file}", "wb") as f:
-                                f.write(audio_data)
-                            logger.info(f"保存音频数据到文件: {call_id}.wav")
-                            
-                            # 将音频数据添加到缓冲区
                             call_audio_buffers[call_id].extend(audio_data)
-                            
+
                             # 检查缓冲区大小是否超过32k
                             if len(call_audio_buffers[call_id]) >= 32768:  # 32k = 32 * 1024
+                                tmp_audio_file = uuid.uuid4().hex + ".wav"
+                                receiver = AudioReceiver(sample_rate=16000, channels=1, output_dir="./input")
+                                receiver.audio_data = call_audio_buffers[call_id]
+                                receiver.save_wav_file(filename=tmp_audio_file)
+                                logger.info(f"保存音频数据到文件: {tmp_audio_file}")
+
                                 if call_ai_backend is not None:
-                                    # 发送累积的音频数据到呼叫AI后端
                                     complete_audio_data = bytes(call_audio_buffers[call_id])
-                                    # 使用call_id作为会话标识
                                     call_id_bytes = uuid.UUID(call_id).bytes
                                     data_with_call_id = call_id_bytes + complete_audio_data
 
