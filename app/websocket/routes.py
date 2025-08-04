@@ -617,7 +617,8 @@ async def call_websocket_endpoint(websocket: WebSocket):
                             # 接收音频数据块
                             audio_data = message["bytes"]
                             # 保存为wav文件到当前目录的input目录下
-                            with open(f"input/{call_id}.wav", "wb") as f:
+                            tmp_audio_file = uuid.uuid4().hex + ".wav"
+                            with open(f"input/{tmp_audio_file}", "wb") as f:
                                 f.write(audio_data)
                             logger.info(f"保存音频数据到文件: {call_id}.wav")
                             
