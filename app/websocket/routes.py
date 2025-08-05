@@ -621,7 +621,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
 
                             # 检查缓冲区大小是否超过32k
                             if len(call_audio_buffers[call_id]) >= 32768:  # 32k = 32 * 1024
-                                tmp_audio_file = uuid.uuid4().hex + ".wav"
+                                tmp_audio_file = f"./input/{uuid.uuid4().hex}.wav"
                                 with wave.open(tmp_audio_file, 'wb') as wav_file:
                                     wav_file.setnchannels(1)
                                     wav_file.setsampwidth(2)
