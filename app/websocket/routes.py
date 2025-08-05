@@ -53,11 +53,12 @@ import json
 import logging
 import base64
 from typing import Dict, Optional
-from api.app.websocket.audio_receiver import AudioReceiver
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import uuid
 import asyncio
 from app.utils.audio import save_raw_to_wav, get_touch_audio_data
+import wave
+
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -621,9 +622,11 @@ async def call_websocket_endpoint(websocket: WebSocket):
                             # 检查缓冲区大小是否超过32k
                             if len(call_audio_buffers[call_id]) >= 32768:  # 32k = 32 * 1024
                                 tmp_audio_file = uuid.uuid4().hex + ".wav"
-                                receiver = AudioReceiver(sample_rate=16000, channels=1, output_dir="./input")
-                                receiver.audio_data = call_audio_buffers[call_id]
-                                receiver.save_wav_file(filename=tmp_audio_file)
+                                with wave.open(tmp_audio_file, 'wb') as wav_file:
+                                    wav_file.setnchannels(1)
+                                    wav_file.setsampwidth(2)
+                                    wav_file.setframerate(16000)
+                                    wav_file.writeframes(call_audio_buffers[call_id])
                                 logger.info(f"保存音频数据到文件: {tmp_audio_file}")
 
                                 if call_ai_backend is not None:
