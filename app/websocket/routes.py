@@ -89,6 +89,63 @@ call_audio_configs: Dict[str, dict] = {}
 # AI后端到前端的音频输出缓冲区（64KB缓冲）
 call_output_buffers: Dict[str, bytearray] = {}
 
+def merge_wav_audio_data(existing_data: bytearray, new_audio_data: bytes) -> bytearray:
+    """
+    合并两个WAV音频数据块，正确处理WAV头部
+    
+    Args:
+        existing_data: 现有的音频数据缓冲区
+        new_audio_data: 新的WAV音频数据
+    
+    Returns:
+        合并后的音频数据
+    """
+    import io
+    
+    if len(existing_data) == 0:
+        # 如果缓冲区为空，直接使用新数据
+        return bytearray(new_audio_data)
+    
+    try:
+        # 从新的WAV数据中提取纯音频数据（跳过WAV头部）
+        new_wav_io = io.BytesIO(new_audio_data)
+        with wave.open(new_wav_io, 'rb') as new_wav:
+            new_audio_frames = new_wav.readframes(new_wav.getnframes())
+            
+        # 将新的音频帧数据添加到现有缓冲区
+        existing_data.extend(new_audio_frames)
+        
+    except Exception as e:
+        # 如果WAV解析失败，记录错误并直接追加数据（作为备用方案）
+        logger.warning(f"WAV合并失败，使用直接追加: {str(e)}")
+        existing_data.extend(new_audio_data)
+    
+    return existing_data
+
+def create_wav_from_frames(audio_frames: bytes, sample_rate: int = 24000, channels: int = 1, sample_width: int = 2) -> bytes:
+    """
+    从音频帧数据创建完整的WAV文件
+    
+    Args:
+        audio_frames: 纯音频帧数据
+        sample_rate: 采样率
+        channels: 声道数
+        sample_width: 样本宽度（字节）
+    
+    Returns:
+        完整的WAV文件数据
+    """
+    import io
+    
+    wav_io = io.BytesIO()
+    with wave.open(wav_io, 'wb') as wav_file:
+        wav_file.setnchannels(channels)
+        wav_file.setsampwidth(sample_width)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(audio_frames)
+    
+    return wav_io.getvalue()
+
 
 @router.websocket("/proxy")
 async def proxy_websocket_endpoint(websocket: WebSocket):
@@ -503,36 +560,42 @@ async def call_websocket_endpoint(websocket: WebSocket):
                                             if call_id not in call_output_buffers:
                                                 call_output_buffers[call_id] = bytearray()
                                             
-                                            # 将音频数据添加到输出缓冲区
-                                            call_output_buffers[call_id].extend(audio_data)
+                                            # 使用WAV合并函数将音频数据添加到输出缓冲区
+                                            call_output_buffers[call_id] = merge_wav_audio_data(call_output_buffers[call_id], audio_data)
                                             logger.debug(f"缓冲AI音频数据: {len(audio_data)} 字节, 累计: {len(call_output_buffers[call_id])} 字节")
                                             
                                             # 检查缓冲区大小是否超过64KB
                                             if len(call_output_buffers[call_id]) >= 65536:  # 64KB = 64 * 1024
                                                 # 获取该呼叫的音频配置
-                                                audio_config = call_audio_configs.get(call_id, {
+                                                audio_config = {
                                                     "audioDataType": "wav",
                                                     "sampleRate": 24000,
                                                     "channels": 1,
                                                     "bitDepth": 16
-                                                })
+                                                }
                                                 
-                                                # 准备要发送的音频数据
-                                                buffered_audio_data = bytes(call_output_buffers[call_id])
+                                                # 从合并的音频帧数据创建完整的WAV文件
+                                                merged_audio_frames = bytes(call_output_buffers[call_id])
+                                                complete_wav_data = create_wav_from_frames(
+                                                    merged_audio_frames,
+                                                    sample_rate=audio_config.get("sampleRate", 24000),
+                                                    channels=audio_config.get("channels", 1),
+                                                    sample_width=audio_config.get("bitDepth", 16) // 8
+                                                )
                                                 
                                                 audio_message = {
                                                     "type": "streamAudio",
                                                     "data": {
                                                         "audioDataType": "wav",
-                                                        "sampleRate": 24000,
-                                                        "channels": 1,
-                                                        "bitDepth": 16,
-                                                        "audioData": base64.b64encode(buffered_audio_data).decode('utf-8')
+                                                        "sampleRate": audio_config.get("sampleRate", 24000),
+                                                        "channels": audio_config.get("channels", 1),
+                                                        "bitDepth": audio_config.get("bitDepth", 16),
+                                                        "audioData": base64.b64encode(complete_wav_data).decode('utf-8')
                                                     }
                                                 }
                                                                                             
                                                 await freeswitch_ws.send_text(json.dumps(audio_message))
-                                                logger.info(f"已将AI处理的音频数据转发至FreeSwitch客户端 {client_id} (缓冲大小: {len(buffered_audio_data)} 字节, 格式: {audio_config['audioDataType']}, {audio_config['sampleRate']}Hz)")
+                                                logger.info(f"已将AI处理的音频数据转发至FreeSwitch客户端 {client_id} (合并音频帧: {len(merged_audio_frames)} 字节, 完整WAV: {len(complete_wav_data)} 字节, 格式: {audio_config.get('audioDataType', 'wav')}, {audio_config.get('sampleRate', 24000)}Hz)")
                                                 
                                                 # 清空输出缓冲区
                                                 call_output_buffers[call_id] = bytearray()
@@ -744,17 +807,23 @@ async def call_websocket_endpoint(websocket: WebSocket):
                                 "bitDepth": 16
                             })
                             
-                            # 准备要发送的剩余音频数据
-                            remaining_audio_data = bytes(call_output_buffers[call_id])
+                            # 从剩余的音频帧数据创建完整的WAV文件
+                            remaining_audio_frames = bytes(call_output_buffers[call_id])
+                            complete_wav_data = create_wav_from_frames(
+                                remaining_audio_frames,
+                                sample_rate=audio_config.get("sampleRate", 24000),
+                                channels=audio_config.get("channels", 1),
+                                sample_width=audio_config.get("bitDepth", 16) // 8
+                            )
                             
                             audio_message = {
                                 "type": "streamAudio",
                                 "data": {
                                     "audioDataType": "wav",
-                                    "sampleRate": 24000,
-                                    "channels": 1,
-                                    "bitDepth": 16,
-                                    "audioData": base64.b64encode(remaining_audio_data).decode('utf-8')
+                                    "sampleRate": audio_config.get("sampleRate", 24000),
+                                    "channels": audio_config.get("channels", 1),
+                                    "bitDepth": audio_config.get("bitDepth", 16),
+                                    "audioData": base64.b64encode(complete_wav_data).decode('utf-8')
                                 }
                             }
                             
@@ -762,7 +831,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
                             if client_id in call_freeswitch_clients:
                                 freeswitch_ws = call_freeswitch_clients[client_id]
                                 await freeswitch_ws.send_text(json.dumps(audio_message))
-                                logger.info(f"已发送剩余缓冲音频数据至FreeSwitch客户端 {client_id} (大小: {len(remaining_audio_data)} 字节)")
+                                logger.info(f"已发送剩余缓冲音频数据至FreeSwitch客户端 {client_id} (音频帧: {len(remaining_audio_frames)} 字节, 完整WAV: {len(complete_wav_data)} 字节)")
                         except Exception as e:
                             logger.warning(f"发送剩余音频数据失败: {str(e)}")
                     
