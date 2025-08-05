@@ -86,6 +86,8 @@ client_to_call: Dict[str, str] = {}
 call_audio_buffers: Dict[str, bytearray] = {}
 # FreeSwitch客户端音频格式配置
 call_audio_configs: Dict[str, dict] = {}
+# AI后端到前端的音频输出缓冲区（64KB缓冲）
+call_output_buffers: Dict[str, bytearray] = {}
 
 
 @router.websocket("/proxy")
@@ -497,27 +499,43 @@ async def call_websocket_endpoint(websocket: WebSocket):
                                         if client_id in call_freeswitch_clients:
                                             freeswitch_ws = call_freeswitch_clients[client_id]
                                             
-                                            # 获取该呼叫的音频配置
-                                            audio_config = call_audio_configs.get(call_id, {
-                                                "audioDataType": "wav",
-                                                "sampleRate": 24000,
-                                                "channels": 1,
-                                                "bitDepth": 16
-                                            })
+                                            # 初始化输出缓冲区（如果不存在）
+                                            if call_id not in call_output_buffers:
+                                                call_output_buffers[call_id] = bytearray()
                                             
-                                            audio_message = {
-                                                "type": "streamAudio",
-                                                "data": {
+                                            # 将音频数据添加到输出缓冲区
+                                            call_output_buffers[call_id].extend(audio_data)
+                                            logger.debug(f"缓冲AI音频数据: {len(audio_data)} 字节, 累计: {len(call_output_buffers[call_id])} 字节")
+                                            
+                                            # 检查缓冲区大小是否超过64KB
+                                            if len(call_output_buffers[call_id]) >= 65536:  # 64KB = 64 * 1024
+                                                # 获取该呼叫的音频配置
+                                                audio_config = call_audio_configs.get(call_id, {
                                                     "audioDataType": "wav",
                                                     "sampleRate": 24000,
                                                     "channels": 1,
-                                                    "bitDepth": 16,
-                                                    "audioData": base64.b64encode(audio_data).decode('utf-8')
+                                                    "bitDepth": 16
+                                                })
+                                                
+                                                # 准备要发送的音频数据
+                                                buffered_audio_data = bytes(call_output_buffers[call_id])
+                                                
+                                                audio_message = {
+                                                    "type": "streamAudio",
+                                                    "data": {
+                                                        "audioDataType": "wav",
+                                                        "sampleRate": 24000,
+                                                        "channels": 1,
+                                                        "bitDepth": 16,
+                                                        "audioData": base64.b64encode(buffered_audio_data).decode('utf-8')
+                                                    }
                                                 }
-                                            }
-                                                                                        
-                                            await freeswitch_ws.send_text(json.dumps(audio_message))
-                                            logger.info(f"已将AI处理的音频数据转发至FreeSwitch客户端 {client_id} (格式: {audio_config['audioDataType']}, {audio_config['sampleRate']}Hz)")
+                                                                                            
+                                                await freeswitch_ws.send_text(json.dumps(audio_message))
+                                                logger.info(f"已将AI处理的音频数据转发至FreeSwitch客户端 {client_id} (缓冲大小: {len(buffered_audio_data)} 字节, 格式: {audio_config['audioDataType']}, {audio_config['sampleRate']}Hz)")
+                                                
+                                                # 清空输出缓冲区
+                                                call_output_buffers[call_id] = bytearray()
                                             
                                         else:
                                             logger.warning(f"找不到FreeSwitch客户端ID: {client_id}")
@@ -715,6 +733,43 @@ async def call_websocket_endpoint(websocket: WebSocket):
                     if call_id in call_audio_buffers:
                         del call_audio_buffers[call_id]
                     
+                    # 在清理前发送剩余的输出缓冲数据（如果有的话）
+                    if call_id in call_output_buffers and len(call_output_buffers[call_id]) > 0:
+                        try:
+                            # 获取该呼叫的音频配置
+                            audio_config = call_audio_configs.get(call_id, {
+                                "audioDataType": "wav",
+                                "sampleRate": 24000,
+                                "channels": 1,
+                                "bitDepth": 16
+                            })
+                            
+                            # 准备要发送的剩余音频数据
+                            remaining_audio_data = bytes(call_output_buffers[call_id])
+                            
+                            audio_message = {
+                                "type": "streamAudio",
+                                "data": {
+                                    "audioDataType": "wav",
+                                    "sampleRate": 24000,
+                                    "channels": 1,
+                                    "bitDepth": 16,
+                                    "audioData": base64.b64encode(remaining_audio_data).decode('utf-8')
+                                }
+                            }
+                            
+                            # 如果FreeSwitch连接仍然有效，发送剩余数据
+                            if client_id in call_freeswitch_clients:
+                                freeswitch_ws = call_freeswitch_clients[client_id]
+                                await freeswitch_ws.send_text(json.dumps(audio_message))
+                                logger.info(f"已发送剩余缓冲音频数据至FreeSwitch客户端 {client_id} (大小: {len(remaining_audio_data)} 字节)")
+                        except Exception as e:
+                            logger.warning(f"发送剩余音频数据失败: {str(e)}")
+                    
+                    # 清理输出缓冲区
+                    if call_id in call_output_buffers:
+                        del call_output_buffers[call_id]
+                    
                     # 清理音频配置
                     if call_id in call_audio_configs:
                         del call_audio_configs[call_id]
@@ -769,6 +824,10 @@ async def get_call_status():
                 "count": len(call_audio_buffers),
                 "buffer_sizes": {call_id: len(buffer) for call_id, buffer in call_audio_buffers.items()}
             },
+            "output_buffers": {
+                "count": len(call_output_buffers),
+                "buffer_sizes": {call_id: len(buffer) for call_id, buffer in call_output_buffers.items()}
+            },
             "audio_configs": {
                 "count": len(call_audio_configs),
                 "configurations": {call_id: config for call_id, config in call_audio_configs.items()}
@@ -789,6 +848,13 @@ async def cleanup_call_resources():
         if call_id not in call_to_client:
             orphaned_buffers.append(call_id)
             del call_audio_buffers[call_id]
+    
+    # 清理孤立的输出缓冲区
+    orphaned_output_buffers = []
+    for call_id in list(call_output_buffers.keys()):
+        if call_id not in call_to_client:
+            orphaned_output_buffers.append(call_id)
+            del call_output_buffers[call_id]
     
     # 清理孤立的音频配置
     orphaned_configs = []
@@ -839,6 +905,8 @@ async def cleanup_call_resources():
                     del call_to_client[call_id]
                 if call_id in call_audio_buffers:
                     del call_audio_buffers[call_id]
+                if call_id in call_output_buffers:
+                    del call_output_buffers[call_id]
                 if call_id in call_audio_configs:
                     del call_audio_configs[call_id]
                 del client_to_call[client_id]
@@ -857,6 +925,7 @@ async def cleanup_call_resources():
             "freeswitch_clients": len(call_freeswitch_clients),
             "active_calls": len(call_to_client),
             "audio_buffers": len(call_audio_buffers),
-                         "audio_configs": len(call_audio_configs)
+            "output_buffers": len(call_output_buffers),
+            "audio_configs": len(call_audio_configs)
          }
      }
