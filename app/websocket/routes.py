@@ -59,7 +59,6 @@ import asyncio
 from app.utils.audio import save_raw_to_wav, get_touch_audio_data
 import wave
 
-
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -381,7 +380,6 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
         logger.error(f"WebSocket代理错误: {str(e)}, 出错行号: {line_number}")
         await websocket.close()
 
-
 @router.websocket("/call")
 async def call_websocket_endpoint(websocket: WebSocket):
     """
@@ -507,7 +505,6 @@ async def call_websocket_endpoint(websocket: WebSocket):
                                                 "bitDepth": 16
                                             })
                                             
-                                            # 按照FreeSwitch要求的格式转发音频数据
                                             audio_message = {
                                                 "type": "streamAudio",
                                                 "data": {
@@ -518,15 +515,10 @@ async def call_websocket_endpoint(websocket: WebSocket):
                                                     "audioData": base64.b64encode(audio_data).decode('utf-8')
                                                 }
                                             }
-                                            
-                                            # 如果配置中包含额外信息，也添加到消息中
-                                            # if "channels" in audio_config:
-                                            #     audio_message["data"]["channels"] = audio_config["channels"]
-                                            # if "bitDepth" in audio_config:
-                                            #     audio_message["data"]["bitDepth"] = audio_config["bitDepth"]
-                                            
+                                                                                        
                                             await freeswitch_ws.send_text(json.dumps(audio_message))
                                             logger.info(f"已将AI处理的音频数据转发至FreeSwitch客户端 {client_id} (格式: {audio_config['audioDataType']}, {audio_config['sampleRate']}Hz)")
+                                            
                                         else:
                                             logger.warning(f"找不到FreeSwitch客户端ID: {client_id}")
                                     else:
