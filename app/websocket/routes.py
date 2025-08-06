@@ -565,7 +565,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
                                             logger.debug(f"缓冲AI音频数据: {len(audio_data)} 字节, 累计: {len(call_output_buffers[call_id])} 字节")
                                             
                                             # 检查缓冲区大小是否超过64KB
-                                            if len(call_output_buffers[call_id]) >= 245760:  # 64KB = 64 * 1024
+                                            if len(call_output_buffers[call_id]) >= 24576:  # 64KB = 64 * 1024
                                                 # 获取该呼叫的音频配置
                                                 audio_config = {
                                                     "audioDataType": "wav",
