@@ -1,54 +1,3 @@
-"""
-WebSocket路由模块
-
-提供两个主要的WebSocket接口：
-
-1. /proxy - 前端客户端和AI后端的通信代理
-   - 支持前端客户端(client_type: "frontend")
-   - 支持AI后端(client_type: "ai_backend")
-   
-2. /call - FreeSwitch呼叫和AI后端的通信代理（独立系统）
-   - 支持FreeSwitch客户端(client_type: "freeswitch")
-   - 支持AI后端(client_type: "ai_backend")
-   
-/call接口使用示例：
-
-AI后端连接：
-```javascript
-const ws = new WebSocket("ws://localhost:8000/ws/call");
-ws.send(JSON.stringify({"client_type": "ai_backend"}));
-```
-
-FreeSwitch客户端连接：
-```javascript
-const ws = new WebSocket("ws://localhost:8000/ws/call");
-ws.send(JSON.stringify({
-    "client_type": "freeswitch",
-    "call_id": "optional-custom-call-id",
-    "audio_config": {
-        "audioDataType": "raw",  // 支持: raw, wav, mp3, ogg
-        "sampleRate": 8000,      // 音频采样率
-        "channels": 1,           // 声道数
-        "bitDepth": 16          // 位深度
-    }
-}));
-```
-
-返回的音频数据格式：
-```json
-{
-    "type": "streamAudio",
-    "data": {
-        "audioDataType": "raw",
-        "sampleRate": 8000,
-        "channels": 1,
-        "bitDepth": 16,
-        "audioData": "base64编码的音频数据"
-    }
-}
-```
-"""
-
 import json
 import logging
 import base64
@@ -174,7 +123,6 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
         client_type = init_data["client_type"]
         
         if client_type == "ai_backend":
-            # 处理AI后端连接
             global ai_backend
             
             # 如果已有AI后端连接，拒绝新连接
@@ -190,12 +138,6 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
             ai_backend = websocket
             logger.info("AI后端已连接")
             
-            # 向AI后端发送确认消息
-            await websocket.send_text(json.dumps({
-                "type": "status",
-                "content": "连接成功"
-            }))
-            
             try:
                 # 监听来自AI后端的消息
                 while True:
@@ -206,25 +148,18 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                         
                         # 检查消息类型
                         if "text" in message:
-                            # 解析JSON消息
                             try:
                                 data = json.loads(message["text"])
                                 
                                 if "type" in data and data.get("type") == "heartbeat":
-                                    # 回复心跳确认
                                     await ai_backend.send_text(json.dumps({"type": "heartbeat_ack"}))
-                                    # logger.info("收到心跳，回复心跳确认")
                                 elif "session_id" in data and "type" in data and data.get("type") == "text":
                                     session_id = str(uuid.UUID(data["session_id"]))
-                                    
-                                    # 查找对应的前端客户端
                                     if session_id in session_to_client:
                                         client_id = session_to_client[session_id]
                                         
                                         if client_id in frontend_clients:
                                             frontend_ws = frontend_clients[client_id]
-                                            
-                                            # 转发消息给前端
                                             await frontend_ws.send_text(json.dumps({
                                                 "type": "text",
                                                 "content": data["content"]
@@ -241,19 +176,16 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                 logger.error("无法解析AI后端发送的JSON消息")
                         
                         elif "bytes" in message:
-                            # 处理二进制数据（音频）
                             binary_data = message["bytes"]
                             
-                            # 从二进制数据中提取会话ID（前8字节）
                             if len(binary_data) > 16:
                                 # 提取会话ID（会话ID是UUID格式，存储在前16字节）
                                 session_id_bytes = binary_data[:16]
                                 audio_data = binary_data[16:]
                                 
                                 try:
-                                    # 将字节转换为UUID字符串
                                     session_id = str(uuid.UUID(bytes=session_id_bytes))
-                                    logger.info(f"接收到AI后端音频数据: {len(audio_data)} 字节, 会话ID: {session_id}")
+                                    # logger.info(f"接收到AI后端音频数据: {len(audio_data)} 字节, 会话ID: {session_id}")
                                         
                                     # 查找对应的前端客户端
                                     if session_id in session_to_client:
@@ -264,7 +196,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                             
                                             # 直接转发音频数据到前端
                                             await frontend_ws.send_bytes(audio_data)
-                                            # logger.info(f"已将AI处理的音频数据转发至前端客户端 {client_id}")
+                                            logger.info(f"已将AI处理的音频数据转发至前端客户端: {len(audio_data)} 字节, 会话ID: {session_id}")
                                         else:
                                             logger.warning(f"找不到客户端ID: {client_id}")
                                     else:
@@ -279,7 +211,6 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
             except Exception as e:
                 logger.error(f"AI后端连接错误: {str(e)}")
             finally:
-                # 清理AI后端连接
                 ai_backend = None
                 logger.info("AI后端连接已关闭")
                 
@@ -307,24 +238,18 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
             }))
             
             try:
-                # 监听来自前端的消息
                 while True:
                     try:
                         logger.debug(f"准备接收来自前端客户端{client_id}的消息")
                         message = await websocket.receive()
                         
-                        # 检查消息类型
                         if "bytes" in message:
-                            # 接收音频数据块
                             audio_data = message["bytes"]
-                            
-                            # 将音频数据添加到缓冲区
                             session_audio_buffers[session_id].extend(audio_data)
                             
                             # 检查缓冲区大小是否超过32k
                             if len(session_audio_buffers[session_id]) >= 32768:  # 32k = 32 * 1024
                                 if ai_backend is not None:
-                                    # 发送累积的音频数据
                                     complete_audio_data = bytes(session_audio_buffers[session_id])
                                     session_id_bytes = uuid.UUID(session_id).bytes
                                     data_with_session = session_id_bytes + complete_audio_data
@@ -355,33 +280,23 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                                 }))
                                                 continue
                                             
-                                            # 转发音频数据到AI后端
-                                            # 创建包含会话ID的二进制数据包
-                                            # 会话ID转为二进制
                                             complete_audio_data = bytes(session_audio_buffers[session_id])
                                             session_id_bytes = uuid.UUID(session_id).bytes
                                             data_with_session = session_id_bytes + complete_audio_data
 
-                                            # 发送音频数据
                                             await ai_backend.send_bytes(data_with_session)
                                             
-                                            # 清空缓冲区，准备下一次录音
                                             session_audio_buffers[session_id] = bytearray()
-                                            
                                         else:
                                             await websocket.send_text(json.dumps({
                                                 "type": "error",
                                                 "content": "没有接收到音频数据"
                                             }))
                                     elif command == "touch":
-                                        # 触摸事件处理
                                         amount = data.get("amount", 1.0)  # 获取触摸压力值，默认为1.0
-                                        
-                                        # 获取音频数据
                                         audio_data = await get_touch_audio_data(amount)
                                         
                                         if audio_data:
-                                            # 发送音频数据，分块发送
                                             chunk_size = 5120  # 大约5KB
                                             for i in range(0, len(audio_data), chunk_size):
                                                 audio_chunk = audio_data[i:i+chunk_size]
@@ -401,14 +316,11 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
             except Exception as e:
                 logger.error(f"前端客户端连接错误: {str(e)}")
             finally:
-                # 清理前端客户端资源
                 if client_id in frontend_clients:
                     del frontend_clients[client_id]
                 
                 if client_id in client_to_session:
                     session_id = client_to_session[client_id]
-                    
-                    # 清理会话相关资源
                     if session_id in session_to_client:
                         del session_to_client[session_id]
                     
@@ -418,7 +330,6 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                     del client_to_session[client_id]
                 
                 logger.info(f"前端客户端资源已清理: {client_id}")
-                logger.debug(f"删除会话映射: 会话ID={session_id}")
         else:
             # 未知客户端类型
             await websocket.send_text(json.dumps({
@@ -441,12 +352,6 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
 
 @router.websocket("/call")
 async def call_websocket_endpoint(websocket: WebSocket):
-    """
-    WebSocket呼叫端点 - 专门处理FreeSwitch呼叫
-    连接双方：
-    1. FreeSwitch客户端 - 发送呼叫音频数据，接收AI处理后的音频结果
-    2. AI后端 - 接收呼叫音频数据，处理后返回音频结果
-    """
     await websocket.accept()
     
     try:
@@ -469,27 +374,17 @@ async def call_websocket_endpoint(websocket: WebSocket):
         client_type = init_data["client_type"]
         
         if client_type == "ai_backend":
-            # 处理AI后端连接（专门用于呼叫处理）
             global call_ai_backend
             
             # 如果已有AI后端连接，拒绝新连接
             if call_ai_backend is not None:
-                await websocket.send_text(json.dumps({
-                    "type": "error",
-                    "content": "呼叫处理AI后端已存在连接"
-                }))
+                logger.info("Error: 呼叫处理AI后端已存在连接")
                 await websocket.close()
                 return
                 
             # 设置呼叫处理AI后端连接
             call_ai_backend = websocket
             logger.info("呼叫处理AI后端已连接")
-            
-            # 向AI后端发送确认消息
-            await websocket.send_text(json.dumps({
-                "type": "status",
-                "content": "呼叫处理AI后端连接成功"
-            }))
             
             try:
                 # 监听来自AI后端的消息
