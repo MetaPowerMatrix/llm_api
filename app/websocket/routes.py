@@ -259,8 +259,8 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                     # 清空缓冲区
                                     session_audio_buffers[session_id] = bytearray()
                                     logger.info(f"发送音频数据: {len(complete_audio_data)} 字节, 会话ID: {session_id}")
-                                else:
-                                    logger.warning("AI后端未连接，无法发送音频数据")
+                                # else:
+                                #     logger.warning("AI后端未连接，无法发送音频数据")
                             
                         elif "text" in message:
                             try:
