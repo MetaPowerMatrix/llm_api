@@ -248,7 +248,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                             session_audio_buffers[session_id].extend(audio_data)
                             
                             # 检查缓冲区大小是否超过32k
-                            if len(session_audio_buffers[session_id]) >= 32768:  # 32k = 32 * 1024
+                            if len(session_audio_buffers[session_id]) >= 16384:  # 16k = 16 * 1024
                                 if ai_backend is not None:
                                     complete_audio_data = bytes(session_audio_buffers[session_id])
                                     session_id_bytes = uuid.UUID(session_id).bytes
