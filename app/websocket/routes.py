@@ -146,7 +146,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                 while True:
                     try:
                         # 在接收消息前记录日志
-                        logger.info(f"准备接收来自AI后端的消息")
+                        # logger.info(f"准备接收来自AI后端的消息")
                         message = await websocket.receive()
                         
                         # 检查消息类型
@@ -244,7 +244,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
             try:
                 while True:
                     try:
-                        logger.debug(f"准备接收来自前端客户端{client_id}的消息")
+                        # logger.debug(f"准备接收来自前端客户端{client_id}的消息")
                         # 使用带超时的接收来防止消息堆积
                         try:
                             message = await asyncio.wait_for(websocket.receive(), timeout=1.0)  # 1秒超时
