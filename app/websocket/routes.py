@@ -193,18 +193,21 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                         
                                         if client_id in frontend_clients:
                                             frontend_ws = frontend_clients[client_id]
-                                            
-                                            # 直接转发音频数据到前端
+
+                                        try:
                                             await frontend_ws.send_bytes(audio_data)
-                                            logger.info(f"已将AI处理的音频数据转发至前端客户端: {len(audio_data)} 字节, 会话ID: {session_id}")
+                                            # logger.info(f"已将AI处理的音频数据转发至前端客户端: {len(audio_data)} 字节, 会话ID: {session_id}")
+                                        except Exception as e:
+                                            logger.error(f"转发音频数据到前端客户端失败: {str(e)}, 会话ID: {session_id}")
+
                                         else:
                                             logger.warning(f"找不到客户端ID: {client_id}")
                                     else:
-                                        logger.warning(f"转发音频数据失败,找不到会话ID: {session_id}")
+                                        logger.warning(f"转发音频数据到前端客户端失败,找不到会话ID: {session_id}")
                                 except ValueError:
                                     logger.error("无法解析会话ID")
                             else:
-                                logger.error("音频数据格式不正确")
+                                logger.error("转发音频数据到前端客户端失败,音频数据格式不正确")
                     except WebSocketDisconnect:
                         logger.info("AI后端断开连接")
                         break
@@ -241,7 +244,22 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                 while True:
                     try:
                         logger.debug(f"准备接收来自前端客户端{client_id}的消息")
-                        message = await websocket.receive()
+                        # 使用带超时的接收来防止消息堆积
+                        try:
+                            message = await asyncio.wait_for(websocket.receive(), timeout=1.0)  # 1秒超时
+                            
+                            # 检查接收队列大小（如果可用）
+                            if hasattr(websocket, '_queue') and websocket._queue.qsize() > 100:  # 队列过大警告阈值
+                                logger.warning(f"WebSocket接收队列积压: {websocket._queue.qsize()} 条消息")
+                                
+                            # 控制处理速率
+                            await asyncio.sleep(0.001)  # 添加小延迟来防止CPU占用过高
+                        except asyncio.TimeoutError:
+                            logger.debug("接收超时，继续下一次接收")
+                            continue
+                        except Exception as e:
+                            logger.error(f"接收消息时发生错误: {str(e)}")
+                            raise
                         
                         if "bytes" in message:
                             audio_data = message["bytes"]
@@ -254,11 +272,14 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                     session_id_bytes = uuid.UUID(session_id).bytes
                                     data_with_session = session_id_bytes + complete_audio_data
 
+                                try:
                                     await ai_backend.send_bytes(data_with_session)
-                                    
+                                    # logger.info(f"音频数据发送成功: {len(complete_audio_data)} 字节, 会话ID: {session_id}")
+                                except Exception as e:
+                                    logger.error(f"音频数据发送失败: {str(e)}, 会话ID: {session_id}")
+
                                     # 清空缓冲区
                                     session_audio_buffers[session_id] = bytearray()
-                                    logger.info(f"发送音频数据: {len(complete_audio_data)} 字节, 会话ID: {session_id}")
                                 # else:
                                 #     logger.warning("AI后端未连接，无法发送音频数据")
                             
@@ -274,24 +295,21 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                         # 前端发送完所有音频数据
                                         if len(session_audio_buffers[session_id]) > 0:
                                             if ai_backend is None:
-                                                await websocket.send_text(json.dumps({
-                                                    "type": "error",
-                                                    "content": "AI后端未连接，无法处理请求"
-                                                }))
                                                 continue
                                             
                                             complete_audio_data = bytes(session_audio_buffers[session_id])
                                             session_id_bytes = uuid.UUID(session_id).bytes
                                             data_with_session = session_id_bytes + complete_audio_data
 
-                                            await ai_backend.send_bytes(data_with_session)
+                                            try:
+                                                await ai_backend.send_bytes(data_with_session)
+                                                # logger.info(f"音频数据发送成功: {len(complete_audio_data)} 字节, 会话ID: {session_id}")
+                                            except Exception as e:
+                                                logger.error(f"音频数据发送失败: {str(e)}, 会话ID: {session_id}")
                                             
                                             session_audio_buffers[session_id] = bytearray()
                                         else:
-                                            await websocket.send_text(json.dumps({
-                                                "type": "error",
-                                                "content": "没有接收到音频数据"
-                                            }))
+                                            logger.warning("没有接收到音频数据")                                            
                                     elif command == "touch":
                                         amount = data.get("amount", 1.0)  # 获取触摸压力值，默认为1.0
                                         audio_data = await get_touch_audio_data(amount)
@@ -304,10 +322,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                                 await asyncio.sleep(0.05)  # 短暂延迟，控制发送速率
                                             logger.info(f"触摸音频发送完成，总大小: {len(audio_data)} 字节")
                                         else:
-                                            await websocket.send_text(json.dumps({
-                                                "type": "error",
-                                                "content": "无法加载触摸音效"
-                                            }))
+                                            logger.warning("没有接收到音频数据")
                             except json.JSONDecodeError:
                                 logger.error("无法解析前端发送的JSON消息")
                     except WebSocketDisconnect:
@@ -613,61 +628,7 @@ async def call_websocket_endpoint(websocket: WebSocket):
                         elif "text" in message:
                             try:
                                 data = json.loads(message["text"])
-                                
-                                if "command" in data:
-                                    command = data["command"]
-                                    
-                                    if command == "audio_complete":
-                                        # FreeSwitch发送完当前音频片段
-                                        if len(call_audio_buffers[call_id]) > 0:
-                                            if call_ai_backend is None:
-                                                await websocket.send_text(json.dumps({
-                                                    "type": "error",
-                                                    "content": "呼叫AI后端未连接，无法处理呼叫请求"
-                                                }))
-                                                continue
-                                            
-                                            # 转发剩余音频数据到呼叫AI后端
-                                            complete_audio_data = bytes(call_audio_buffers[call_id])
-                                            call_id_bytes = uuid.UUID(call_id).bytes
-                                            data_with_call_id = call_id_bytes + complete_audio_data
-
-                                            # 发送音频数据
-                                            await call_ai_backend.send_bytes(data_with_call_id)
-                                            
-                                            # 清空缓冲区
-                                            call_audio_buffers[call_id] = bytearray()
-                                            logger.info(f"呼叫音频发送完成: {len(complete_audio_data)} 字节, 呼叫ID: {call_id}")
-                                            
-                                        else:
-                                            await websocket.send_text(json.dumps({
-                                                "type": "error",
-                                                "content": "没有接收到呼叫音频数据"
-                                            }))
-                                    
-                                    elif command == "call_start":
-                                        # 呼叫开始
-                                        logger.info(f"呼叫开始: {call_id}")
-                                        await websocket.send_text(json.dumps({
-                                            "type": "status",
-                                            "content": "呼叫已开始"
-                                        }))
-                                    
-                                    elif command == "call_end":
-                                        # 呼叫结束
-                                        logger.info(f"呼叫结束: {call_id}")
-                                        await websocket.send_text(json.dumps({
-                                            "type": "status",
-                                            "content": "呼叫已结束"
-                                        }))
-                                        break
-                                    
-                                    elif command == "heartbeat":
-                                        # 心跳检测
-                                        await websocket.send_text(json.dumps({
-                                            "type": "heartbeat_ack",
-                                            "timestamp": data.get("timestamp")
-                                        }))
+                                logger.debug(f"接收到FreeSwitch消息: {data}")
                                         
                             except json.JSONDecodeError:
                                 logger.error("无法解析FreeSwitch发送的JSON消息")
