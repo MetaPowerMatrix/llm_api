@@ -196,13 +196,11 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                         
                                         if client_id in frontend_clients:
                                             frontend_ws = frontend_clients[client_id]
-
-                                        try:
-                                            await frontend_ws.send_bytes(audio_data)
-                                            # logger.info(f"已将AI处理的音频数据转发至前端客户端: {len(audio_data)} 字节, 会话ID: {session_id}")
-                                        except Exception as e:
-                                            logger.error(f"转发音频数据到前端客户端失败: {str(e)}, 会话ID: {session_id}")
-
+                                            try:
+                                                await frontend_ws.send_bytes(audio_data)
+                                                # logger.info(f"已将AI处理的音频数据转发至前端客户端: {len(audio_data)} 字节, 会话ID: {session_id}")
+                                            except Exception as e:
+                                                logger.error(f"转发音频数据到前端客户端失败: {str(e)}, 会话ID: {session_id}")
                                         else:
                                             logger.warning(f"找不到客户端ID: {client_id}")
                                     else:
