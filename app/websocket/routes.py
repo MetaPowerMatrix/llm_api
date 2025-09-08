@@ -275,11 +275,11 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                                     session_id_bytes = uuid.UUID(session_id).bytes
                                     data_with_session = session_id_bytes + complete_audio_data
 
-                                try:
-                                    await ai_backend.send_bytes(data_with_session)
-                                    # logger.info(f"音频数据发送成功: {len(complete_audio_data)} 字节, 会话ID: {session_id}")
-                                except Exception as e:
-                                    logger.error(f"音频数据发送失败: {str(e)}, 会话ID: {session_id}")
+                                    try:
+                                        await ai_backend.send_bytes(data_with_session)
+                                        # logger.info(f"音频数据发送成功: {len(complete_audio_data)} 字节, 会话ID: {session_id}")
+                                    except Exception as e:
+                                        logger.error(f"音频数据发送失败: {str(e)}, 会话ID: {session_id}")
 
                                     # 清空缓冲区
                                     session_audio_buffers[session_id] = bytearray()
