@@ -107,6 +107,9 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     
     try:
+        frame_size_20ms = 16000 * 2 * 1 * 0.02  # 计算20ms对应的字节数：640 bytes
+        target_chunk_size = frame_size_20ms * 50  # 例如，目标：每1秒（50帧）发送一次
+
         # 等待连接标识消息
         init_message = await websocket.receive_text()
         logger.info(f"初始化消息: {init_message}")
@@ -266,7 +269,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
                             session_audio_buffers[session_id].extend(audio_data)
                             
                             # 检查缓冲区大小是否超过32k
-                            if len(session_audio_buffers[session_id]) >= 16384:  # 16k = 16 * 1024
+                            if len(session_audio_buffers[session_id]) >= target_chunk_size:  # 16k = 16 * 1024
                                 if ai_backend is not None:
                                     complete_audio_data = bytes(session_audio_buffers[session_id])
                                     session_id_bytes = uuid.UUID(session_id).bytes
