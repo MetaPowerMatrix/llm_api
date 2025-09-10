@@ -108,7 +108,7 @@ async def proxy_websocket_endpoint(websocket: WebSocket):
     
     try:
         frame_size_20ms = 16000 * 2 * 1 * 0.02  # 计算20ms对应的字节数：640 bytes
-        target_chunk_size = frame_size_20ms * 50  # 例如，目标：每1秒（50帧）发送一次
+        target_chunk_size = frame_size_20ms * 25  # 例如，目标：每1秒（50帧）发送一次
 
         # 等待连接标识消息
         init_message = await websocket.receive_text()
